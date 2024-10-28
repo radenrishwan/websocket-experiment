@@ -101,6 +101,20 @@
       <p>Connected At: <span id="userInfoConnectAt">-</span></p>
     </div>
 
+    <div
+      id="connectedClients"
+      style="
+        margin-bottom: 20px;
+        padding: 10px;
+        background-color: #e8f5e9;
+        border-radius: 5px;
+        border: 1px solid #c8e6c9;
+      "
+    >
+      <h3>Connected Clients</h3>
+      <ul id="clientsList"></ul>
+    </div>
+
     <div>
       <input type="text" id="nameInput" placeholder="Enter your name" />
       <select id="typeSelect">
@@ -271,17 +285,20 @@
           document.getElementById("roomInputContainer");
         const roomInput = document.getElementById("roomInput");
         const roomsList = document.getElementById("roomsList");
+        const connectedClients = document.getElementById("connectedClients");
 
         if (typeSelect.value === "room") {
           roomInputContainer.style.display = "block";
           roomInput.placeholder = "Enter room name";
           roomsList.innerHTML = "Loading rooms...";
+          connectedClients.style.display = "block";
           const rooms = await fetchRooms();
           displayRooms(rooms);
         } else {
           roomInputContainer.style.display = "block";
           roomInput.placeholder = "Enter user ID";
           roomsList.innerHTML = "Loading users...";
+          connectedClients.style.display = "none";
           const clients = await fetchClients();
           displayClients(clients);
         }
@@ -378,8 +395,12 @@
           if (type === "room") {
             stopClientsRefresh();
             refreshRooms();
+            // Start refreshing room clients
+            startRoomClientsRefresh(roomOrPrivate);
           } else {
             startClientsRefresh();
+            // Hide connected clients div for private chats
+            document.getElementById("connectedClients").style.display = "none";
           }
         };
 
@@ -392,6 +413,7 @@
           console.log("Disconnected from server");
           appendMessage("Disconnected from server", "system");
           stopClientsRefresh();
+          stopRoomClientsRefresh(); // Add this line
         };
 
         ws.onerror = (error) => {
@@ -533,6 +555,61 @@
         const container = document.getElementById("messageContainer");
         container.appendChild(messageDiv);
         container.scrollTop = container.scrollHeight;
+      }
+
+      async function fetchRoomClients(roomName) {
+        try {
+          const response = await fetch(
+            `http://localhost:8083/api/room/clients?name=${encodeURIComponent(roomName)}`,
+          );
+          const data = await response.json();
+          return data.clients || [];
+        } catch (error) {
+          console.error("Error fetching room clients:", error);
+          return [];
+        }
+      }
+
+      function updateConnectedClients(clients) {
+        const clientsList = document.getElementById("clientsList");
+        clientsList.innerHTML = "";
+
+        clients.forEach((client) => {
+          const li = document.createElement("li");
+          li.textContent = client;
+          li.style.padding = "5px";
+          li.style.margin = "2px 0";
+          clientsList.appendChild(li);
+        });
+
+        if (clients.length === 0) {
+          const li = document.createElement("li");
+          li.textContent = "No clients connected";
+          clientsList.appendChild(li);
+        }
+      }
+
+      let roomClientsInterval;
+
+      function startRoomClientsRefresh(roomName) {
+        // Initial fetch
+        refreshRoomClients(roomName);
+
+        // Set up periodic refresh
+        roomClientsInterval = setInterval(() => {
+          refreshRoomClients(roomName);
+        }, 5000); // Refresh every 5 seconds
+      }
+
+      function stopRoomClientsRefresh() {
+        if (roomClientsInterval) {
+          clearInterval(roomClientsInterval);
+        }
+      }
+
+      async function refreshRoomClients(roomName) {
+        const clients = await fetchRoomClients(roomName);
+        updateConnectedClients(clients);
       }
     </script>
   </body>
