@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Chat</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      #messageContainer {
+        height: 400px;
+        border: 1px solid #ccc;
+        overflow-y: auto;
+        margin-bottom: 20px;
+        padding: 10px;
+      }
+      .message {
+        margin: 5px 0;
+        padding: 5px;
+        border-radius: 5px;
+      }
+      .system {
+        background-color: #f0f0f0;
+        color: #666;
+      }
+      .user {
+        background-color: #e3f2fd;
+      }
+      .typing {
+        font-style: italic;
+        color: #666;
+      }
+      input,
+      button,
+      select {
+        margin: 5px;
+        padding: 5px;
+      }
+      #roomsList {
+        margin: 10px 0;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+      .room-item {
+        padding: 5px;
+        margin: 2px 0;
+        cursor: pointer;
+        border-radius: 3px;
+      }
+      .room-item:hover {
+        background-color: #f0f0f0;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>WebSocket Chat</h2>
+    <div>
+      <input type="text" id="nameInput" placeholder="Enter your name" />
+      <select id="typeSelect" onchange="handleTypeChange()">
+        <option value="room">Join Room</option>
+        <option value="private">Private Chat</option>
+      </select>
+      <div id="roomInputContainer">
+        <input type="text" id="roomInput" placeholder="Enter room name" />
+        <button onclick="refreshRooms()">Refresh Rooms</button>
+        <div id="roomsList"></div>
+      </div>
+      <button onclick="connect()">Connect</button>
+    </div>
+    <div id="messageContainer"></div>
+    <div>
+      <input
+        type="text"
+        id="messageInput"
+        placeholder="Type your message"
+        onkeydown="handleTyping(event)"
+      />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+      let ws;
+      let typingTimeout;
+      const MESSAGE = 0;
+      const JOIN = 1;
+      const LEAVE = 2;
+      const TYPING = 3;
+      const STOP_TYPING = 4;
+
+      async function fetchRooms() {
+        try {
+          const response = await fetch("http://localhost:8080/api/rooms");
+          const data = await response.json();
+          return data.rooms || [];
+        } catch (error) {
+          console.error("Error fetching rooms:", error);
+          return [];
+        }
+      }
+
+      async function refreshRooms() {
+        const roomsList = document.getElementById("roomsList");
+        roomsList.innerHTML = "Loading rooms...";
+
+        const rooms = await fetchRooms();
+
+        if (rooms.length === 0) {
+          roomsList.innerHTML = "No active rooms";
+          return;
+        }
+
+        roomsList.innerHTML = "";
+        rooms.forEach((room) => {
+          const roomElement = document.createElement("div");
+          roomElement.className = "room-item";
+          roomElement.textContent = room;
+          roomElement.onclick = () => selectRoom(room);
+          roomsList.appendChild(roomElement);
+        });
+      }
+
+      function selectRoom(roomName) {
+        document.getElementById("roomInput").value = roomName;
+      }
+
+      function handleTypeChange() {
+        const typeSelect = document.getElementById("typeSelect");
+        const roomInputContainer =
+          document.getElementById("roomInputContainer");
+        const roomInput = document.getElementById("roomInput");
+
+        if (typeSelect.value === "room") {
+          roomInputContainer.style.display = "block";
+          roomInput.placeholder = "Enter room name";
+          refreshRooms();
+        } else {
+          roomInputContainer.style.display = "block";
+          roomInput.placeholder = "Enter user ID";
+          document.getElementById("roomsList").innerHTML = "";
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        handleTypeChange();
+        refreshRooms();
+      });
+
+      function connect() {
+        const name = document.getElementById("nameInput").value;
+        const type = document.getElementById("typeSelect").value;
+        const roomOrPrivate = document.getElementById("roomInput").value;
+
+        if (!name || !roomOrPrivate) {
+          alert("Please enter name and room/private ID");
+          return;
+        }
+
+        let wsUrl = `ws://localhost:8080/ws?name=${name}`;
+        if (type === "room") {
+          wsUrl += `&room=${roomOrPrivate}`;
+        } else {
+          wsUrl += `&private=${roomOrPrivate}`;
+        }
+
+        if (ws) {
+          ws.close();
+        }
+
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          console.log("Connected to server");
+          appendMessage("Connected to server", "system");
+          const joinMessage = {
+            type: JOIN,
+            from: name,
+            to: roomOrPrivate,
+            content: "",
+          };
+          ws.send(JSON.stringify(joinMessage));
+          refreshRooms();
+        };
+
+        ws.onmessage = (event) => {
+          console.log("Received message:", event.data);
+          const message = JSON.parse(event.data);
+          handleMessage(message);
+        };
+
+        ws.onclose = () => {
+          console.log("Disconnected from server");
+          appendMessage("Disconnected from server", "system");
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          appendMessage("WebSocket error occurred", "system");
+        };
+      }
+
+      function handleMessage(message) {
+        console.log("Handling message:", message);
+        switch (message.type) {
+          case MESSAGE:
+            if (message.from !== document.getElementById("nameInput").value) {
+              appendMessage(`${message.from}: ${message.content}`, "user");
+            }
+            break;
+          case JOIN:
+          case LEAVE:
+            appendMessage(message.content, "system");
+            break;
+          case TYPING:
+            showTyping(message.from);
+            break;
+          case STOP_TYPING:
+            hideTyping(message.from);
+            break;
+        }
+      }
+
+      function sendMessage() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          alert("Not connected to server");
+          return;
+        }
+
+        const messageInput = document.getElementById("messageInput");
+        const content = messageInput.value.trim();
+        if (!content) return;
+
+        const message = {
+          type: MESSAGE,
+          from: document.getElementById("nameInput").value,
+          to: document.getElementById("roomInput").value,
+          content: content,
+        };
+
+        console.log("Sending message:", message);
+        ws.send(JSON.stringify(message));
+        appendMessage(`${message.from}: ${message.content}`, "user");
+        messageInput.value = "";
+      }
+
+      function handleTyping(event) {
+        if (event.key === "Enter") {
+          sendMessage();
+          return;
+        }
+
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+        clearTimeout(typingTimeout);
+        const message = {
+          type: TYPING,
+          from: document.getElementById("nameInput").value,
+          to: document.getElementById("roomInput").value,
+          content: "",
+        };
+        ws.send(JSON.stringify(message));
+
+        typingTimeout = setTimeout(() => {
+          const stopTypingMessage = {
+            type: STOP_TYPING,
+            from: document.getElementById("nameInput").value,
+            to: document.getElementById("roomInput").value,
+            content: "",
+          };
+          ws.send(JSON.stringify(stopTypingMessage));
+        }, 1000);
+      }
+
+      function showTyping(user) {
+        const typingDiv =
+          document.getElementById(`typing-${user}`) ||
+          document.createElement("div");
+        typingDiv.id = `typing-${user}`;
+        typingDiv.className = "typing";
+        typingDiv.textContent = `${user} is typing...`;
+        document.getElementById("messageContainer").appendChild(typingDiv);
+      }
+
+      function hideTyping(user) {
+        const typingDiv = document.getElementById(`typing-${user}`);
+        if (typingDiv) {
+          typingDiv.remove();
+        }
+      }
+
+      function appendMessage(message, type) {
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `message ${type}`;
+        messageDiv.textContent = message;
+        const container = document.getElementById("messageContainer");
+        container.appendChild(messageDiv);
+        container.scrollTop = container.scrollHeight;
+      }
+    </script>
+  </body>
+</html>

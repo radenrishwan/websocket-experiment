@@ -1,0 +1,14 @@
+{
+  "name": "test",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "bun-types": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@types/k6": "^0.54.1"
+  }
+}
