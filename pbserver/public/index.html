@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WebSocket Chat</title>
+
+    <script src="https://cdn.rawgit.com/dcodeIO/protobuf.js/6.X.X/dist/protobuf.js"></script>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -74,16 +76,13 @@
     </div>
     <div id="messageContainer"></div>
     <div>
-      <input
-        type="text"
-        id="messageInput"
-        placeholder="Type your message"
-        onkeydown="handleTyping(event)"
-      />
+      <input type="text" id="messageInput" placeholder="Type your message" />
       <button id="sendButton">Send</button>
     </div>
 
     <script>
+      console.log(protobuf);
+
       let ws;
       let typingTimeout;
       const MESSAGE = 0;
@@ -91,6 +90,20 @@
       const LEAVE = 2;
       const TYPING = 3;
       const STOP_TYPING = 4;
+
+      const enc = new TextEncoder();
+
+      var Message;
+
+      protobuf.load("pb/message.proto", function (err, root) {
+        if (err) throw err;
+
+        Message = root.lookupType("Message");
+      });
+
+      document
+        .getElementById("messageInput")
+        .addEventListener("keydown", handleTyping);
 
       document.addEventListener("DOMContentLoaded", () => {
         // Type select change handler
@@ -183,6 +196,8 @@
       });
 
       function connect() {
+        console.log("Connecting to server");
+
         const name = document.getElementById("nameInput").value;
         const type = document.getElementById("typeSelect").value;
         const roomOrPrivate = document.getElementById("roomInput").value;
@@ -206,19 +221,26 @@
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
+          console.log("Connected to server");
           appendMessage("Connected to server", "system");
-          const joinMessage = {
+          const joinMessage = Message.create({
             type: JOIN,
             from: name,
             to: roomOrPrivate,
             content: "",
-          };
-          ws.send(JSON.stringify(joinMessage));
+          });
+
+          // DECODE USING PROTOBUF
+          ws.send(Message.encode(joinMessage).finish());
           refreshRooms();
         };
 
         ws.onmessage = (event) => {
-          const message = JSON.parse(event.data);
+          console.log("Received message:", event.data);
+          const message = Message.decode(enc.encode(event.data));
+
+          // ENCODE USING PROTOBUF
+
           handleMessage(message);
         };
 
@@ -234,6 +256,7 @@
       }
 
       function handleMessage(message) {
+        console.log("Handling message:", message);
         switch (message.type) {
           case MESSAGE:
             if (message.from !== document.getElementById("nameInput").value) {
@@ -263,15 +286,18 @@
         const content = messageInput.value.trim();
         if (!content) return;
 
-        const message = {
+        const message = Message.create({
           type: MESSAGE,
           from: document.getElementById("nameInput").value,
           to: document.getElementById("roomInput").value,
           content: content,
-        };
+        });
 
         console.log("Sending message:", message);
-        ws.send(JSON.stringify(message));
+
+        // ENCODE USING PROTOBUF
+
+        ws.send(Message.encode(message).finish());
         appendMessage(`${message.from}: ${message.content}`, "user");
         messageInput.value = "";
       }
@@ -285,22 +311,25 @@
         if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
         clearTimeout(typingTimeout);
-        const message = {
+        const message = Message.create({
           type: TYPING,
           from: document.getElementById("nameInput").value,
           to: document.getElementById("roomInput").value,
           content: "",
-        };
-        ws.send(JSON.stringify(message));
+        });
+        // ENCODE USING PROTOBUF
+
+        ws.send(Message.encode(message).finish());
 
         typingTimeout = setTimeout(() => {
-          const stopTypingMessage = {
+          const stopTypingMessage = Message.create({
             type: STOP_TYPING,
             from: document.getElementById("nameInput").value,
             to: document.getElementById("roomInput").value,
             content: "",
-          };
-          ws.send(JSON.stringify(stopTypingMessage));
+          });
+
+          ws.send(Message.encode(stopTypingMessage).finish());
         }, 1000);
       }
 

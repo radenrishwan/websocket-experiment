@@ -5,26 +5,31 @@ import { randomString } from "https://jslib.k6.io/k6-utils/1.2.0/index.js";
 
 export const options = {
   stages: [
-    { duration: "30s", target: 20 }, // Ramp up to 20 users
-    { duration: "1m", target: 20 }, // Stay at 20 users for 1 minute
-    { duration: "30s", target: 0 }, // Ramp down to 0 users
+    { duration: "30s", target: 100 }, // Ramp up to 100 users
+    { duration: "1m", target: 300 }, // Ramp up to 300 users
+    { duration: "1m", target: 500 }, // Ramp up to 500 users
+    { duration: "1m", target: 750 }, // Ramp up to 750 users
+    { duration: "1m", target: 1000 }, // Ramp up to 1000 users
+    { duration: "2m", target: 1000 }, // Stay at 1000 users
+    { duration: "1m", target: 0 }, // Ramp down to 0
   ],
   thresholds: {
     http_req_duration: ["p(95)<500"], // 95% of requests should be below 500ms
     ws_session_duration: ["p(95)<3000"], // 95% of WebSocket sessions should be below 3s
+    http_req_failed: ["rate<0.01"], // http errors should be less than 1%
   },
 };
 
 export default function () {
   // Test HTTP endpoints
-  const clientsResponse = http.get("http://localhost:8080/api/clients");
+  const clientsResponse = http.get("http://localhost:8083/api/clients");
   check(clientsResponse, {
     "clients status is 200": (r) => r.status === 200,
     "clients response is json": (r) =>
       r.headers["Content-Type"].includes("application/json"),
   });
 
-  const roomsResponse = http.get("http://localhost:8080/api/rooms");
+  const roomsResponse = http.get("http://localhost:8083/api/rooms");
   check(roomsResponse, {
     "rooms status is 200": (r) => r.status === 200,
     "rooms response is json": (r) =>
@@ -35,7 +40,7 @@ export default function () {
   const roomName = "testRoom";
   const username = `user_${randomString(5)}`;
 
-  const wsUrl = `ws://localhost:8080/ws?name=${username}&room=${roomName}`;
+  const wsUrl = `ws://localhost:8083/ws?name=${username}&room=${roomName}`;
 
   const res = ws.connect(wsUrl, {}, function (socket) {
     socket.on("open", () => {
