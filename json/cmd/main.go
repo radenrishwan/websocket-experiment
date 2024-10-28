@@ -3,64 +3,19 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"jsonserver"
 	"log/slog"
 	"strconv"
-	"time"
 
 	"github.com/radenrishwan/hfs"
 )
 
-type MessageType int
-
-const (
-	MESSAGE     MessageType = iota
-	JOIN        MessageType = iota
-	LEAVE       MessageType = iota
-	TYPING      MessageType = iota
-	STOP_TYPING MessageType = iota
-)
-
-type Message struct {
-	Type    MessageType `json:"type"`
-	From    string      `json:"from"`
-	To      string      `json:"to"`
-	Content string      `json:"content"`
-}
-
-func NewMessage() *Message {
-	return &Message{}
-}
-
-func (m *Message) Parse(msg []byte) error {
-	return json.Unmarshal(msg, m)
-}
-
-func (m Message) String() string {
-	result, _ := json.Marshal(m)
-
-	return string(result)
-}
-
-type Client struct {
-	Name      string
-	Conn      *hfs.Client
-	ConnectAt int64
-}
-
-func NewClient(name string, conn *hfs.Client) Client {
-	return Client{
-		Name:      name,
-		Conn:      conn,
-		ConnectAt: time.Now().UnixMilli(),
-	}
-}
-
 var websocket = hfs.NewWebsocket(nil)
-var clients = make(map[int64]*Client)
+var clients = make(map[int64]*jsonserver.Client)
 var rooms = make(map[string][]bool)
 
 func main() {
-	server := hfs.NewServer(":8080", hfs.Option{})
+	server := hfs.NewServer(":8083", hfs.Option{})
 
 	server.ServeFile("/", "public/index.html")
 
@@ -106,7 +61,7 @@ func main() {
 		}
 
 		conn, _ := websocket.Upgrade(r)
-		client := NewClient(name, &conn)
+		client := jsonserver.NewClient(name, &conn)
 		clients[client.ConnectAt] = &client
 
 		room := r.GetArgs("room")
@@ -140,7 +95,7 @@ func main() {
 	}
 }
 
-func roomLoop(room string, client *Client) error {
+func roomLoop(room string, client *jsonserver.Client) error {
 	// check if room is exist
 	if _, ok := rooms[room]; !ok {
 		websocket.CreateRoom(room)
@@ -156,7 +111,7 @@ func roomLoop(room string, client *Client) error {
 			return err
 		}
 
-		msg := NewMessage()
+		msg := jsonserver.NewMessage()
 		err = msg.Parse(data)
 		if err != nil {
 			slog.Error("Error while parsing data", "ERROR", err.Error())
@@ -165,38 +120,38 @@ func roomLoop(room string, client *Client) error {
 		slog.Info("MSG INCOMMING", "MSG", msg.String())
 
 		switch msg.Type {
-		case MESSAGE:
+		case jsonserver.MESSAGE:
 			websocket.Broadcast(room, msg.String(), true)
-		case JOIN:
-			res := Message{
-				Type:    JOIN,
+		case jsonserver.JOIN:
+			res := jsonserver.Message{
+				Type:    jsonserver.JOIN,
 				From:    "SERVER",
 				To:      room,
 				Content: client.Name + " has joined the room",
 			}
 
 			websocket.Broadcast(room, res.String(), true)
-		case LEAVE:
-			res := Message{
-				Type:    LEAVE,
+		case jsonserver.LEAVE:
+			res := jsonserver.Message{
+				Type:    jsonserver.LEAVE,
 				From:    "SERVER",
 				To:      room,
 				Content: client.Name + " has left the room",
 			}
 
 			websocket.Broadcast(room, res.String(), true)
-		case TYPING:
-			res := Message{
-				Type:    TYPING,
+		case jsonserver.TYPING:
+			res := jsonserver.Message{
+				Type:    jsonserver.TYPING,
 				From:    client.Name,
 				To:      room,
 				Content: client.Name + "is typing...",
 			}
 
 			websocket.Broadcast(room, res.String(), true)
-		case STOP_TYPING:
-			res := Message{
-				Type:    STOP_TYPING,
+		case jsonserver.STOP_TYPING:
+			res := jsonserver.Message{
+				Type:    jsonserver.STOP_TYPING,
 				From:    client.Name,
 				To:      room,
 				Content: client.Name + "stop typing...",
@@ -206,7 +161,7 @@ func roomLoop(room string, client *Client) error {
 	}
 }
 
-func privateLoop(private int64, client *Client) error {
+func privateLoop(private int64, client *jsonserver.Client) error {
 	// check if client is exist
 	if _, ok := clients[private]; !ok {
 		return errors.New("Client not found")
@@ -219,45 +174,45 @@ func privateLoop(private int64, client *Client) error {
 			return err
 		}
 
-		msg := NewMessage()
+		msg := jsonserver.NewMessage()
 		err = msg.Parse(data)
 		if err != nil {
 			slog.Error("Error while parsing data", "ERROR", err.Error())
 		}
 
 		switch msg.Type {
-		case MESSAGE:
+		case jsonserver.MESSAGE:
 			to.Conn.Send(msg.String())
-		case JOIN:
-			res := Message{
-				Type:    JOIN,
+		case jsonserver.JOIN:
+			res := jsonserver.Message{
+				Type:    jsonserver.JOIN,
 				From:    "SERVER",
 				To:      client.Name,
 				Content: client.Name + " has joined the room",
 			}
 
 			to.Conn.Send(res.String())
-		case LEAVE:
-			res := Message{
-				Type:    LEAVE,
+		case jsonserver.LEAVE:
+			res := jsonserver.Message{
+				Type:    jsonserver.LEAVE,
 				From:    client.Name,
 				To:      to.Name,
 				Content: client.Name + " has left the room",
 			}
 
 			to.Conn.Send(res.String())
-		case TYPING:
-			res := Message{
-				Type:    TYPING,
+		case jsonserver.TYPING:
+			res := jsonserver.Message{
+				Type:    jsonserver.TYPING,
 				From:    client.Name,
 				To:      to.Name,
 				Content: client.Name + "is typing...",
 			}
 
 			to.Conn.Send(res.String())
-		case STOP_TYPING:
-			res := Message{
-				Type:    STOP_TYPING,
+		case jsonserver.STOP_TYPING:
+			res := jsonserver.Message{
+				Type:    jsonserver.STOP_TYPING,
 				From:    client.Name,
 				To:      to.Name,
 				Content: client.Name + "stop typing...",
