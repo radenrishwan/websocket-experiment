@@ -55,10 +55,52 @@
       .room-item:hover {
         background-color: #f0f0f0;
       }
+      #userInfo {
+        background-color: #f5f5f5;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 20px;
+      }
+      #userInfo h3 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        color: #333;
+      }
+      #userInfo p {
+        margin: 5px 0;
+        color: #666;
+      }
+      #userInfo span {
+        color: #333;
+        font-weight: bold;
+      }
+      .private-message {
+        background-color: #ffe0e0;
+        border-radius: 5px;
+        padding: 5px;
+        margin: 5px 0;
+      }
     </style>
   </head>
   <body>
     <h2>WebSocket Chat</h2>
+
+    <div
+      id="userInfo"
+      style="
+        margin-bottom: 20px;
+        padding: 10px;
+        background-color: #f5f5f5;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+      "
+    >
+      <h3>Your Info</h3>
+      <p>ID: <span id="userInfoId">-</span></p>
+      <p>Name: <span id="userInfoName">-</span></p>
+      <p>Connected At: <span id="userInfoConnectAt">-</span></p>
+    </div>
+
     <div>
       <input type="text" id="nameInput" placeholder="Enter your name" />
       <select id="typeSelect">
@@ -92,6 +134,36 @@
       const TYPING = 3;
       const STOP_TYPING = 4;
 
+      const style = document.createElement("style");
+      style.textContent = `
+          .private-chat-header {
+              background-color: #f8d7da;
+              color: #721c24;
+              padding: 10px;
+              margin-bottom: 10px;
+              border-radius: 5px;
+              text-align: center;
+          }
+          .private-message {
+              background-color: #ffe0e0;
+              border-radius: 5px;
+              padding: 8px;
+              margin: 5px 0;
+          }
+          .room-item {
+              padding: 10px;
+              margin: 5px 0;
+              background-color: #f8f9fa;
+              border: 1px solid #dee2e6;
+              border-radius: 5px;
+              cursor: pointer;
+          }
+          .room-item:hover {
+              background-color: #e9ecef;
+          }
+      `;
+      document.head.appendChild(style);
+
       document.addEventListener("DOMContentLoaded", () => {
         // Type select change handler
         document
@@ -123,6 +195,28 @@
         refreshRooms();
       });
 
+      let clientsRefreshInterval;
+
+      function startClientsRefresh() {
+        if (document.getElementById("typeSelect").value === "private") {
+          refreshClients();
+          clientsRefreshInterval = setInterval(refreshClients, 5000); // Refresh every 5 seconds
+        }
+      }
+
+      function stopClientsRefresh() {
+        if (clientsRefreshInterval) {
+          clearInterval(clientsRefreshInterval);
+        }
+      }
+
+      async function refreshClients() {
+        if (document.getElementById("typeSelect").value === "private") {
+          const clients = await fetchClients();
+          displayClients(clients);
+        }
+      }
+
       async function fetchRooms() {
         try {
           const response = await fetch("http://localhost:8083/api/rooms");
@@ -130,6 +224,17 @@
           return data.rooms || [];
         } catch (error) {
           console.error("Error fetching rooms:", error);
+          return [];
+        }
+      }
+
+      async function fetchClients() {
+        try {
+          const response = await fetch("http://localhost:8083/api/clients");
+          const data = await response.json();
+          return data.clients || [];
+        } catch (error) {
+          console.error("Error fetching clients:", error);
           return [];
         }
       }
@@ -160,21 +265,76 @@
         return roomElement;
       }
 
-      function handleTypeChange() {
+      async function handleTypeChange() {
         const typeSelect = document.getElementById("typeSelect");
         const roomInputContainer =
           document.getElementById("roomInputContainer");
         const roomInput = document.getElementById("roomInput");
+        const roomsList = document.getElementById("roomsList");
 
         if (typeSelect.value === "room") {
           roomInputContainer.style.display = "block";
           roomInput.placeholder = "Enter room name";
-          refreshRooms();
+          roomsList.innerHTML = "Loading rooms...";
+          const rooms = await fetchRooms();
+          displayRooms(rooms);
         } else {
           roomInputContainer.style.display = "block";
           roomInput.placeholder = "Enter user ID";
-          document.getElementById("roomsList").innerHTML = "";
+          roomsList.innerHTML = "Loading users...";
+          const clients = await fetchClients();
+          displayClients(clients);
         }
+      }
+
+      function displayRooms(rooms) {
+        const roomsList = document.getElementById("roomsList");
+        roomsList.innerHTML = "";
+
+        if (rooms.length === 0) {
+          roomsList.innerHTML = "No active rooms";
+          return;
+        }
+
+        rooms.forEach((room) => {
+          const roomElement = document.createElement("div");
+          roomElement.className = "room-item";
+          roomElement.textContent = room;
+          roomElement.addEventListener("click", () => {
+            document.getElementById("roomInput").value = room;
+          });
+          roomsList.appendChild(roomElement);
+        });
+      }
+
+      function displayClients(clients) {
+        const roomsList = document.getElementById("roomsList");
+        roomsList.innerHTML = "";
+
+        if (clients.length === 0) {
+          roomsList.innerHTML = "No active users";
+          return;
+        }
+
+        const currentUserId = document.getElementById("userInfoId").textContent;
+
+        clients.forEach((client) => {
+          // Don't show current user in the list
+          if (client.id === currentUserId) {
+            return;
+          }
+
+          const clientElement = document.createElement("div");
+          clientElement.className = "room-item";
+          clientElement.innerHTML = `
+                  <strong>${client.name}</strong><br>
+                  <small>ID: ${client.id}</small>
+              `;
+          clientElement.addEventListener("click", () => {
+            document.getElementById("roomInput").value = client.id;
+          });
+          roomsList.appendChild(clientElement);
+        });
       }
 
       document.addEventListener("DOMContentLoaded", () => {
@@ -192,11 +352,11 @@
           return;
         }
 
-        let wsUrl = `ws://localhost:8083/ws?name=${name}`;
+        let wsUrl = `ws://localhost:8083/ws?name=${encodeURIComponent(name)}`;
         if (type === "room") {
-          wsUrl += `&room=${roomOrPrivate}`;
+          wsUrl += `&room=${encodeURIComponent(roomOrPrivate)}`;
         } else {
-          wsUrl += `&private=${roomOrPrivate}`;
+          wsUrl += `&private=${encodeURIComponent(roomOrPrivate)}`;
         }
 
         if (ws) {
@@ -214,7 +374,13 @@
             content: "",
           };
           ws.send(JSON.stringify(joinMessage));
-          refreshRooms();
+
+          if (type === "room") {
+            stopClientsRefresh();
+            refreshRooms();
+          } else {
+            startClientsRefresh();
+          }
         };
 
         ws.onmessage = (event) => {
@@ -225,6 +391,7 @@
         ws.onclose = () => {
           console.log("Disconnected from server");
           appendMessage("Disconnected from server", "system");
+          stopClientsRefresh();
         };
 
         ws.onerror = (error) => {
@@ -234,10 +401,28 @@
       }
 
       function handleMessage(message) {
+        console.log("Received message:", message);
+
         switch (message.type) {
           case MESSAGE:
-            if (message.from !== document.getElementById("nameInput").value) {
-              appendMessage(`${message.from}: ${message.content}`, "user");
+            if (message.from === "SERVER") {
+              try {
+                const userData = JSON.parse(message.content);
+                updateUserInfo(userData);
+              } catch (e) {
+                console.error("Error parsing user data:", e);
+              }
+            } else if (
+              message.from !== document.getElementById("nameInput").value
+            ) {
+              const isPrivate =
+                document.getElementById("typeSelect").value === "private";
+              const messageClass = isPrivate ? "private-message" : "user";
+              const prefix = isPrivate ? "Private message from" : "From";
+              appendMessage(
+                `${prefix} ${message.from}: ${message.content}`,
+                messageClass,
+              );
             }
             break;
           case JOIN:
@@ -250,6 +435,26 @@
           case STOP_TYPING:
             hideTyping(message.from);
             break;
+        }
+      }
+
+      function updateUserInfo(userData) {
+        console.log("Updating user info with:", userData); // Debug log
+
+        if (userData) {
+          document.getElementById("userInfoId").textContent =
+            userData.connect_at || "Unknown";
+          document.getElementById("userInfoName").textContent =
+            userData.name || "Unknown";
+          // Convert timestamp to readable date
+          if (userData.connect_at) {
+            const connectDate = new Date(userData.connect_at).toLocaleString();
+            document.getElementById("userInfoConnectAt").textContent =
+              connectDate;
+          } else {
+            document.getElementById("userInfoConnectAt").textContent =
+              "Unknown";
+          }
         }
       }
 

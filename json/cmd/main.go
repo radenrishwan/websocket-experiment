@@ -21,16 +21,17 @@ func main() {
 
 	server.Handle("/api/clients", func(r hfs.Request) *hfs.Response {
 		type cl struct {
-			Id   int64  `json:"id"`
-			Name string `json:"name"`
+			Id        string `json:"id"` // Change to string
+			Name      string `json:"name"`
+			ConnectAt int64  `json:"connect_at"`
 		}
 
 		var result []cl
-
 		for _, v := range clients {
 			result = append(result, cl{
-				Id:   v.ConnectAt,
-				Name: v.Name,
+				Id:        strconv.FormatInt(v.ConnectAt, 10), // Convert to string
+				Name:      v.Name,
+				ConnectAt: v.ConnectAt,
 			})
 		}
 
@@ -40,6 +41,7 @@ func main() {
 
 		return hfs.NewJSONResponse(string(data))
 	})
+
 	server.Handle("/api/rooms", func(r hfs.Request) *hfs.Response {
 		var data []string
 
@@ -66,6 +68,16 @@ func main() {
 
 		room := r.GetArgs("room")
 		private := r.GetArgs("private")
+
+		// send user data
+		msg := jsonserver.Message{
+			Type:    jsonserver.MESSAGE,
+			From:    "SERVER",
+			To:      string(rune(client.ConnectAt)),
+			Content: string(client.Json()),
+		}
+
+		client.Conn.Send(msg.String())
 
 		if room != "" {
 			roomLoop(room, &client)
