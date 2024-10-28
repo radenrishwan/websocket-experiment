@@ -3,234 +3,255 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+
     <title>WebSocket Chat</title>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 20px;
-      }
-      #messageContainer {
-        height: 400px;
-        border: 1px solid #ccc;
-        overflow-y: auto;
-        margin-bottom: 20px;
-        padding: 10px;
-      }
-      .message {
-        margin: 5px 0;
-        padding: 5px;
-        border-radius: 5px;
-      }
-      .system {
-        background-color: #f0f0f0;
-        color: #666;
-      }
-      .user {
-        background-color: #e3f2fd;
-      }
-      .typing {
-        font-style: italic;
-        color: #666;
-      }
-      input,
-      button,
-      select {
-        margin: 5px;
-        padding: 5px;
-      }
-      #roomsList {
-        margin: 10px 0;
-        padding: 10px;
-        border: 1px solid #ccc;
-        border-radius: 5px;
-      }
-      .room-item {
-        padding: 5px;
-        margin: 2px 0;
-        cursor: pointer;
-        border-radius: 3px;
-      }
-      .room-item:hover {
-        background-color: #f0f0f0;
-      }
-      #userInfo {
-        background-color: #f5f5f5;
-        border-radius: 5px;
-        padding: 10px;
-        margin-bottom: 20px;
-      }
-      #userInfo h3 {
-        margin-top: 0;
-        margin-bottom: 10px;
-        color: #333;
-      }
-      #userInfo p {
-        margin: 5px 0;
-        color: #666;
-      }
-      #userInfo span {
-        color: #333;
-        font-weight: bold;
-      }
-      .private-message {
-        background-color: #ffe0e0;
-        border-radius: 5px;
-        padding: 5px;
-        margin: 5px 0;
-      }
-    </style>
   </head>
-  <body>
-    <h2>WebSocket Chat</h2>
+  <body class="bg-gray-100 h-screen">
+    <div class="flex h-screen">
+      <!-- Sidebar -->
+      <div class="w-64 bg-gray-800 flex flex-col">
+        <!-- User Info -->
+        <div class="p-4 bg-gray-900">
+          <div class="flex items-center space-x-2">
+            <div
+              class="w-10 h-10 rounded-full bg-gray-600 flex items-center justify-center"
+            >
+              <span class="text-white text-lg" id="userInitial">-</span>
+            </div>
+            <div class="text-white">
+              <div id="userInfoName" class="font-semibold">-</div>
+              <div id="userInfoId" class="text-xs text-gray-400">-</div>
+            </div>
+          </div>
+        </div>
 
-    <div
-      id="userInfo"
-      style="
-        margin-bottom: 20px;
-        padding: 10px;
-        background-color: #f5f5f5;
-        border-radius: 5px;
-        border: 1px solid #ddd;
-      "
-    >
-      <h3>Your Info</h3>
-      <p>ID: <span id="userInfoId">-</span></p>
-      <p>Name: <span id="userInfoName">-</span></p>
-      <p>Connected At: <span id="userInfoConnectAt">-</span></p>
-    </div>
+        <!-- Chat Type Selector -->
+        <div class="p-4 border-b border-gray-700">
+          <select
+            id="typeSelect"
+            class="w-full bg-gray-700 text-white rounded p-2"
+          >
+            <option value="room">Channels</option>
+            <option value="private">Direct Messages</option>
+          </select>
+        </div>
 
-    <div
-      id="connectedClients"
-      style="
-        margin-bottom: 20px;
-        padding: 10px;
-        background-color: #e8f5e9;
-        border-radius: 5px;
-        border: 1px solid #c8e6c9;
-      "
-    >
-      <h3>Connected Clients</h3>
-      <ul id="clientsList"></ul>
-    </div>
+        <!-- All Users Section -->
+        <div class="p-4 border-b border-gray-700">
+          <div class="flex justify-between items-center mb-2">
+            <h3 class="text-gray-400 text-sm font-semibold">ALL USERS</h3>
+            <button
+              onclick="refreshAllUsers()"
+              class="text-gray-400 hover:text-white"
+            >
+              <svg
+                class="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </button>
+          </div>
+          <div
+            id="allUsersList"
+            class="space-y-1 max-h-40 overflow-y-auto"
+          ></div>
+        </div>
 
-    <div>
-      <input type="text" id="nameInput" placeholder="Enter your name" />
-      <select id="typeSelect">
-        <option value="room">Join Room</option>
-        <option value="private">Private Chat</option>
-      </select>
-      <div id="roomInputContainer">
-        <input type="text" id="roomInput" placeholder="Enter room name" />
-        <button id="refreshButton">Refresh Rooms</button>
-        <div id="roomsList"></div>
+        <!-- Rooms/Users List -->
+        <div class="flex-1 overflow-y-auto">
+          <div class="p-4">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="text-gray-400 text-sm font-semibold">
+                <span id="listTitle">CHANNELS</span>
+              </h3>
+              <button id="refreshButton" class="text-gray-400 hover:text-white">
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div id="roomsList" class="space-y-1"></div>
+          </div>
+        </div>
+
+        <!-- Connected Users -->
+        <div id="connectedClients" class="p-4 bg-gray-700">
+          <h3 class="text-gray-400 text-sm font-semibold mb-2">
+            ONLINE - <span id="clientCount">0</span>
+          </h3>
+          <ul id="clientsList" class="text-gray-300 text-sm space-y-1"></ul>
+        </div>
       </div>
-      <button id="connectButton">Connect</button>
-    </div>
-    <div id="messageContainer"></div>
-    <div>
-      <input
-        type="text"
-        id="messageInput"
-        placeholder="Type your message"
-        onkeydown="handleTyping(event)"
-      />
-      <button id="sendButton">Send</button>
+
+      <!-- Main Chat Area -->
+      <div class="flex-1 flex flex-col">
+        <!-- Chat Header -->
+        <div class="h-16 bg-white border-b flex items-center px-6">
+          <div>
+            <h2 class="font-semibold" id="currentChatTitle">Welcome</h2>
+            <p class="text-sm text-gray-500" id="userInfoConnectAt">-</p>
+          </div>
+        </div>
+
+        <!-- Messages -->
+        <div
+          class="flex-1 overflow-y-auto p-6 space-y-4"
+          id="messageContainer"
+        ></div>
+
+        <!-- Input Area -->
+        <div class="p-4 bg-white border-t">
+          <div class="flex items-center space-x-2">
+            <input
+              type="text"
+              id="nameInput"
+              placeholder="Enter your name"
+              class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+            />
+            <input
+              type="text"
+              id="roomInput"
+              placeholder="Enter room name"
+              class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+            />
+            <button
+              id="connectButton"
+              class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition"
+            >
+              Connect
+            </button>
+          </div>
+          <div class="flex items-center space-x-2 mt-4">
+            <input
+              type="text"
+              id="messageInput"
+              placeholder="Type a message..."
+              class="flex-1 border rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
+              onkeydown="handleTyping(event)"
+            />
+            <button
+              id="sendButton"
+              class="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
       let ws;
       let typingTimeout;
+      let clientsRefreshInterval;
+      let roomClientsInterval;
+      let allUsersRefreshInterval;
+
       const MESSAGE = 0;
       const JOIN = 1;
       const LEAVE = 2;
       const TYPING = 3;
       const STOP_TYPING = 4;
 
-      const style = document.createElement("style");
-      style.textContent = `
-          .private-chat-header {
-              background-color: #f8d7da;
-              color: #721c24;
-              padding: 10px;
-              margin-bottom: 10px;
-              border-radius: 5px;
-              text-align: center;
-          }
-          .private-message {
-              background-color: #ffe0e0;
-              border-radius: 5px;
-              padding: 8px;
-              margin: 5px 0;
-          }
-          .room-item {
-              padding: 10px;
-              margin: 5px 0;
-              background-color: #f8f9fa;
-              border: 1px solid #dee2e6;
-              border-radius: 5px;
-              cursor: pointer;
-          }
-          .room-item:hover {
-              background-color: #e9ecef;
-          }
-      `;
-      document.head.appendChild(style);
-
       document.addEventListener("DOMContentLoaded", () => {
-        // Type select change handler
+        // Initial setup
         document
           .getElementById("typeSelect")
           .addEventListener("change", handleTypeChange);
-
-        // Refresh rooms button
         document
           .getElementById("refreshButton")
           .addEventListener("click", refreshRooms);
-
-        // Connect button
         document
           .getElementById("connectButton")
           .addEventListener("click", connect);
-
-        // Send button
         document
           .getElementById("sendButton")
           .addEventListener("click", sendMessage);
-
-        // Message input typing handler
         document
           .getElementById("messageInput")
           .addEventListener("keydown", handleTyping);
 
-        // Initial setup
         handleTypeChange();
         refreshRooms();
+        refreshAllUsers();
       });
 
-      let clientsRefreshInterval;
-
-      function startClientsRefresh() {
-        if (document.getElementById("typeSelect").value === "private") {
-          refreshClients();
-          clientsRefreshInterval = setInterval(refreshClients, 5000); // Refresh every 5 seconds
+      // All Users Management
+      async function refreshAllUsers() {
+        try {
+          const response = await fetch("http://localhost:8083/api/clients");
+          const data = await response.json();
+          displayAllUsers(data.clients);
+        } catch (error) {
+          console.error("Error fetching all users:", error);
         }
       }
 
-      function stopClientsRefresh() {
-        if (clientsRefreshInterval) {
-          clearInterval(clientsRefreshInterval);
+      function displayAllUsers(users) {
+        const allUsersList = document.getElementById("allUsersList");
+        allUsersList.innerHTML = "";
+
+        const currentUserId = document.getElementById("userInfoId").textContent;
+
+        users.forEach((user) => {
+          if (user.id === currentUserId) return;
+
+          const userElement = document.createElement("div");
+          userElement.className =
+            "flex items-center space-x-2 p-2 rounded hover:bg-gray-700 cursor-pointer text-gray-300";
+
+          userElement.innerHTML = `
+            <span class="w-2 h-2 rounded-full bg-green-500"></span>
+            <div class="flex-1">
+              <div class="text-sm font-medium">${user.name}</div>
+              <div class="text-xs text-gray-400">ID: ${user.id}</div>
+            </div>
+            <button onclick="startPrivateChat('${user.id}')" class="text-gray-400 hover:text-white text-sm">
+              Message
+            </button>
+          `;
+
+          allUsersList.appendChild(userElement);
+        });
+      }
+
+      function startPrivateChat(userId) {
+        document.getElementById("typeSelect").value = "private";
+        document.getElementById("roomInput").value = userId;
+        handleTypeChange();
+      }
+
+      function startAllUsersRefresh() {
+        refreshAllUsers();
+        allUsersRefreshInterval = setInterval(refreshAllUsers, 5000);
+      }
+
+      function stopAllUsersRefresh() {
+        if (allUsersRefreshInterval) {
+          clearInterval(allUsersRefreshInterval);
         }
       }
 
-      async function refreshClients() {
-        if (document.getElementById("typeSelect").value === "private") {
-          const clients = await fetchClients();
-          displayClients(clients);
-        }
-      }
-
+      // Rooms Management
       async function fetchRooms() {
         try {
           const response = await fetch("http://localhost:8083/api/rooms");
@@ -242,66 +263,12 @@
         }
       }
 
-      async function fetchClients() {
-        try {
-          const response = await fetch("http://localhost:8083/api/clients");
-          const data = await response.json();
-          return data.clients || [];
-        } catch (error) {
-          console.error("Error fetching clients:", error);
-          return [];
-        }
-      }
-
       async function refreshRooms() {
         const roomsList = document.getElementById("roomsList");
         roomsList.innerHTML = "Loading rooms...";
 
         const rooms = await fetchRooms();
-
-        if (rooms.length === 0) {
-          roomsList.innerHTML = "No active rooms";
-          return;
-        }
-
-        roomsList.innerHTML = "";
-        rooms.forEach((room) => {
-          const roomElement = createRoomElement(room);
-          roomsList.appendChild(roomElement);
-        });
-      }
-
-      function createRoomElement(room) {
-        const roomElement = document.createElement("div");
-        roomElement.className = "room-item";
-        roomElement.textContent = room;
-        roomElement.addEventListener("click", () => selectRoom(room));
-        return roomElement;
-      }
-
-      async function handleTypeChange() {
-        const typeSelect = document.getElementById("typeSelect");
-        const roomInputContainer =
-          document.getElementById("roomInputContainer");
-        const roomInput = document.getElementById("roomInput");
-        const roomsList = document.getElementById("roomsList");
-        const connectedClients = document.getElementById("connectedClients");
-
-        if (typeSelect.value === "room") {
-          roomInputContainer.style.display = "block";
-          roomInput.placeholder = "Enter room name";
-          roomsList.innerHTML = "Loading rooms...";
-          connectedClients.style.display = "block";
-          const rooms = await fetchRooms();
-          displayRooms(rooms);
-        } else {
-          roomInputContainer.style.display = "block";
-          roomInput.placeholder = "Enter user ID";
-          roomsList.innerHTML = "Loading users...";
-          connectedClients.style.display = "none";
-          const clients = await fetchClients();
-          displayClients(clients);
-        }
+        displayRooms(rooms);
       }
 
       function displayRooms(rooms) {
@@ -315,8 +282,12 @@
 
         rooms.forEach((room) => {
           const roomElement = document.createElement("div");
-          roomElement.className = "room-item";
-          roomElement.textContent = room;
+          roomElement.className =
+            "flex items-center space-x-2 p-2 rounded hover:bg-gray-700 cursor-pointer text-gray-300";
+          roomElement.innerHTML = `
+            <span class="text-gray-400">#</span>
+            <span>${room}</span>
+          `;
           roomElement.addEventListener("click", () => {
             document.getElementById("roomInput").value = room;
           });
@@ -324,41 +295,71 @@
         });
       }
 
-      function displayClients(clients) {
-        const roomsList = document.getElementById("roomsList");
-        roomsList.innerHTML = "";
-
-        if (clients.length === 0) {
-          roomsList.innerHTML = "No active users";
-          return;
+      // Clients Management
+      async function fetchClients() {
+        try {
+          const response = await fetch("http://localhost:8083/api/clients");
+          const data = await response.json();
+          return data.clients || [];
+        } catch (error) {
+          console.error("Error fetching clients:", error);
+          return [];
         }
+      }
 
-        const currentUserId = document.getElementById("userInfoId").textContent;
+      async function refreshClients() {
+        if (document.getElementById("typeSelect").value === "private") {
+          const clients = await fetchClients();
+          displayClients(clients);
+        }
+      }
+
+      function displayClients(clients) {
+        const clientsList = document.getElementById("clientsList");
+        clientsList.innerHTML = "";
+        document.getElementById("clientCount").textContent = clients.length;
 
         clients.forEach((client) => {
-          // Don't show current user in the list
-          if (client.id === currentUserId) {
-            return;
-          }
-
-          const clientElement = document.createElement("div");
-          clientElement.className = "room-item";
-          clientElement.innerHTML = `
-                  <strong>${client.name}</strong><br>
-                  <small>ID: ${client.id}</small>
-              `;
-          clientElement.addEventListener("click", () => {
-            document.getElementById("roomInput").value = client.id;
-          });
-          roomsList.appendChild(clientElement);
+          const li = document.createElement("li");
+          li.className = "flex items-center space-x-2";
+          li.innerHTML = `
+            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+            <span>${client.name}</span>
+          `;
+          clientsList.appendChild(li);
         });
       }
 
-      document.addEventListener("DOMContentLoaded", () => {
-        handleTypeChange();
-        refreshRooms();
-      });
+      // Type Change Handler
+      async function handleTypeChange() {
+        const typeSelect = document.getElementById("typeSelect");
+        const roomInputContainer =
+          document.getElementById("roomInputContainer");
+        const roomInput = document.getElementById("roomInput");
+        const roomsList = document.getElementById("roomsList");
+        const connectedClients = document.getElementById("connectedClients");
+        const listTitle = document.getElementById("listTitle");
 
+        if (typeSelect.value === "room") {
+          listTitle.textContent = "CHANNELS";
+          roomInputContainer.style.display = "block";
+          roomInput.placeholder = "Enter room name";
+          roomsList.innerHTML = "Loading rooms...";
+          connectedClients.style.display = "block";
+          const rooms = await fetchRooms();
+          displayRooms(rooms);
+        } else {
+          listTitle.textContent = "DIRECT MESSAGES";
+          roomInputContainer.style.display = "block";
+          roomInput.placeholder = "Enter user ID";
+          roomsList.innerHTML = "Loading users...";
+          connectedClients.style.display = "none";
+          const clients = await fetchClients();
+          displayClients(clients);
+        }
+      }
+
+      // WebSocket Connection
       function connect() {
         const name = document.getElementById("nameInput").value;
         const type = document.getElementById("typeSelect").value;
@@ -384,6 +385,8 @@
 
         ws.onopen = () => {
           appendMessage("Connected to server", "system");
+          startAllUsersRefresh();
+
           const joinMessage = {
             type: JOIN,
             from: name,
@@ -395,11 +398,9 @@
           if (type === "room") {
             stopClientsRefresh();
             refreshRooms();
-            // Start refreshing room clients
             startRoomClientsRefresh(roomOrPrivate);
           } else {
             startClientsRefresh();
-            // Hide connected clients div for private chats
             document.getElementById("connectedClients").style.display = "none";
           }
         };
@@ -413,7 +414,8 @@
           console.log("Disconnected from server");
           appendMessage("Disconnected from server", "system");
           stopClientsRefresh();
-          stopRoomClientsRefresh(); // Add this line
+          stopRoomClientsRefresh();
+          stopAllUsersRefresh();
         };
 
         ws.onerror = (error) => {
@@ -422,6 +424,7 @@
         };
       }
 
+      // Message Handling
       function handleMessage(message) {
         console.log("Received message:", message);
 
@@ -460,26 +463,6 @@
         }
       }
 
-      function updateUserInfo(userData) {
-        console.log("Updating user info with:", userData); // Debug log
-
-        if (userData) {
-          document.getElementById("userInfoId").textContent =
-            userData.connect_at || "Unknown";
-          document.getElementById("userInfoName").textContent =
-            userData.name || "Unknown";
-          // Convert timestamp to readable date
-          if (userData.connect_at) {
-            const connectDate = new Date(userData.connect_at).toLocaleString();
-            document.getElementById("userInfoConnectAt").textContent =
-              connectDate;
-          } else {
-            document.getElementById("userInfoConnectAt").textContent =
-              "Unknown";
-          }
-        }
-      }
-
       function sendMessage() {
         if (!ws || ws.readyState !== WebSocket.OPEN) {
           alert("Not connected to server");
@@ -497,9 +480,8 @@
           content: content,
         };
 
-        console.log("Sending message:", message);
         ws.send(JSON.stringify(message));
-        appendMessage(`${message.from}: ${message.content}`, "user");
+        appendMessage(`You: ${message.content}`, "user");
         messageInput.value = "";
       }
 
@@ -531,12 +513,52 @@
         }, 1000);
       }
 
+      // UI Updates
+      function appendMessage(message, type) {
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `rounded-lg p-3 max-w-[80%] ${
+          type === "user"
+            ? "bg-blue-500 text-white ml-auto"
+            : type === "system"
+              ? "bg-gray-200 text-gray-600 mx-auto text-center text-sm"
+              : "bg-gray-100 text-gray-800"
+        }`;
+        messageDiv.textContent = message;
+        const container = document.getElementById("messageContainer");
+        container.appendChild(messageDiv);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      function updateUserInfo(userData) {
+        if (userData) {
+          document.getElementById("userInfoId").textContent =
+            userData.id || "Unknown";
+          document.getElementById("userInfoName").textContent =
+            userData.name || "Unknown";
+          if (userData.connect_at) {
+            const connectDate = new Date(userData.connect_at).toLocaleString();
+            document.getElementById("userInfoConnectAt").textContent =
+              connectDate;
+          } else {
+            document.getElementById("userInfoConnectAt").textContent =
+              "Unknown";
+          }
+          updateUserInitial();
+        }
+      }
+
+      function updateUserInitial() {
+        const name = document.getElementById("userInfoName").textContent;
+        const initial = name !== "Unknown" ? name.charAt(0).toUpperCase() : "?";
+        document.getElementById("userInitial").textContent = initial;
+      }
+
       function showTyping(user) {
         const typingDiv =
           document.getElementById(`typing-${user}`) ||
           document.createElement("div");
         typingDiv.id = `typing-${user}`;
-        typingDiv.className = "typing";
+        typingDiv.className = "text-sm text-gray-500 italic";
         typingDiv.textContent = `${user} is typing...`;
         document.getElementById("messageContainer").appendChild(typingDiv);
       }
@@ -548,15 +570,7 @@
         }
       }
 
-      function appendMessage(message, type) {
-        const messageDiv = document.createElement("div");
-        messageDiv.className = `message ${type}`;
-        messageDiv.textContent = message;
-        const container = document.getElementById("messageContainer");
-        container.appendChild(messageDiv);
-        container.scrollTop = container.scrollHeight;
-      }
-
+      // Room Clients Management
       async function fetchRoomClients(roomName) {
         try {
           const response = await fetch(
@@ -570,35 +584,11 @@
         }
       }
 
-      function updateConnectedClients(clients) {
-        const clientsList = document.getElementById("clientsList");
-        clientsList.innerHTML = "";
-
-        clients.forEach((client) => {
-          const li = document.createElement("li");
-          li.textContent = client;
-          li.style.padding = "5px";
-          li.style.margin = "2px 0";
-          clientsList.appendChild(li);
-        });
-
-        if (clients.length === 0) {
-          const li = document.createElement("li");
-          li.textContent = "No clients connected";
-          clientsList.appendChild(li);
-        }
-      }
-
-      let roomClientsInterval;
-
       function startRoomClientsRefresh(roomName) {
-        // Initial fetch
         refreshRoomClients(roomName);
-
-        // Set up periodic refresh
         roomClientsInterval = setInterval(() => {
           refreshRoomClients(roomName);
-        }, 5000); // Refresh every 5 seconds
+        }, 5000);
       }
 
       function stopRoomClientsRefresh() {
@@ -610,6 +600,41 @@
       async function refreshRoomClients(roomName) {
         const clients = await fetchRoomClients(roomName);
         updateConnectedClients(clients);
+      }
+
+      function updateConnectedClients(clients) {
+        const clientsList = document.getElementById("clientsList");
+        clientsList.innerHTML = "";
+        document.getElementById("clientCount").textContent = clients.length;
+
+        clients.forEach((client) => {
+          const li = document.createElement("li");
+          li.className = "flex items-center space-x-2";
+          li.innerHTML = `
+            <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+            <span>${client}</span>
+          `;
+          clientsList.appendChild(li);
+        });
+
+        if (clients.length === 0) {
+          const li = document.createElement("li");
+          li.textContent = "No clients connected";
+          clientsList.appendChild(li);
+        }
+      }
+
+      function startClientsRefresh() {
+        if (document.getElementById("typeSelect").value === "private") {
+          refreshClients();
+          clientsRefreshInterval = setInterval(refreshClients, 5000);
+        }
+      }
+
+      function stopClientsRefresh() {
+        if (clientsRefreshInterval) {
+          clearInterval(clientsRefreshInterval);
+        }
       }
     </script>
   </body>
