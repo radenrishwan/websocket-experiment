@@ -13,7 +13,6 @@ import (
 var websocket = hfs.NewWebsocket(nil)
 var clients = make(map[int64]*jsonserver.Client)
 var rooms = make(map[string][]bool)
-var roomClients = make(map[string][]*jsonserver.Client)
 
 func main() {
 	server := hfs.NewServer(":8083", hfs.Option{})
@@ -53,26 +52,6 @@ func main() {
 		result, _ := json.Marshal(map[string]any{
 			"rooms": data,
 		})
-		return hfs.NewJSONResponse(string(result))
-	})
-
-	// get all client that connected to the room
-	server.Handle("/api/room/clients", func(r hfs.Request) *hfs.Response {
-		roomName := r.GetArgs("name")
-		if roomName == "" {
-			slog.Error("Error while get args", "ERROR", "Name is required")
-			return hfs.NewTextResponse("Name is required")
-		}
-
-		var data []string
-		for _, v := range roomClients[roomName] {
-			data = append(data, v.Name)
-		}
-
-		result, _ := json.Marshal(map[string]any{
-			"clients": data,
-		})
-
 		return hfs.NewJSONResponse(string(result))
 	})
 
@@ -137,13 +116,10 @@ func roomLoop(room string, client *jsonserver.Client) error {
 
 	// add to room
 	websocket.Rooms[room].AddClient(client.Conn)
-	roomClients[room] = append(roomClients[room], client)
 
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
-			deleteFromRoom(room, client)
-
 			return err
 		}
 
@@ -255,14 +231,6 @@ func privateLoop(private int64, client *jsonserver.Client) error {
 			}
 
 			to.Conn.Send(res.String())
-		}
-	}
-}
-
-func deleteFromRoom(roomName string, client *jsonserver.Client) {
-	for i, v := range roomClients[roomName] {
-		if v.ConnectAt == client.ConnectAt {
-			roomClients[roomName] = append(roomClients[roomName][:i], roomClients[roomName][i+1:]...)
 		}
 	}
 }
