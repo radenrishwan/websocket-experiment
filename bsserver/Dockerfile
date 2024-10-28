@@ -1,0 +1,20 @@
+FROM golang:1.23.1-alpine3.20 AS build
+
+WORKDIR /app
+
+COPY go.mod ./
+COPY go.sum ./
+
+RUN go mod download && go mod verify
+
+COPY . .
+
+RUN go build -o /server cmd/main.go
+
+FROM scratch
+
+COPY --from=build /app/public /public
+
+COPY --from=build /server /server
+
+ENTRYPOINT ["/server"]
