@@ -1,5 +1,7 @@
 services:
   json-server:
+    mem_limit: 2g
+    cpu_count: 2
     build: .
     container_name: json-server
     platform: linux/aarch64

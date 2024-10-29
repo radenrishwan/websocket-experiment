@@ -66,9 +66,16 @@ func main() {
 			return hfs.NewTextResponse("Name is required")
 		}
 
+		// check if name is exist
+		_, ok := clients.Load(name)
+		if ok {
+			slog.Error("Error while get args", "ERROR", "Name is already exist")
+			return hfs.NewTextResponse("Name is already exist")
+		}
+
 		conn, _ := websocket.Upgrade(r)
 		client := jsonserver.NewClient(name, &conn)
-		clients.Store(client.ConnectAt, &client)
+		clients.Store(client.Name, &client)
 
 		room := r.GetArgs("room")
 		private := r.GetArgs("private")
@@ -86,14 +93,7 @@ func main() {
 		if room != "" {
 			roomLoop(room, &client)
 		} else if private != "" {
-			// string to int64
-			privId, err := strconv.Atoi(private)
-			if err != nil {
-				slog.Error("Error while converting private to int64", "ERROR", err.Error())
-				return hfs.NewTextResponse("Error while converting private to int64")
-			}
-
-			privateLoop(int64(privId), &client)
+			privateLoop(private, &client)
 		} else {
 			slog.Error("Error while get args", "ERROR", "Room or private is required")
 			return hfs.NewTextResponse("Room or private is required")
@@ -138,8 +138,6 @@ func roomLoop(room string, client *jsonserver.Client) error {
 			slog.Error("Error while parsing data", "ERROR", err.Error())
 		}
 
-		slog.Info("MSG INCOMMING", "MSG", msg.String())
-
 		switch msg.Type {
 		case jsonserver.MESSAGE:
 			websocket.Broadcast(room, msg.String(), true)
@@ -182,7 +180,7 @@ func roomLoop(room string, client *jsonserver.Client) error {
 	}
 }
 
-func privateLoop(private int64, client *jsonserver.Client) error {
+func privateLoop(private string, client *jsonserver.Client) error {
 	// check if client is exist
 	if _, ok := clients.Load(private); !ok {
 		return errors.New("Client not found")
