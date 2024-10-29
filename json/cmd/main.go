@@ -6,13 +6,14 @@ import (
 	"jsonserver"
 	"log/slog"
 	"strconv"
+	"sync"
 
 	"github.com/radenrishwan/hfs"
 )
 
 var websocket = hfs.NewWebsocket(nil)
-var clients = make(map[int64]*jsonserver.Client)
-var rooms = make(map[string][]bool)
+var clients sync.Map
+var rooms sync.Map
 
 func main() {
 	server := hfs.NewServer(":8083", hfs.Option{})
@@ -21,19 +22,21 @@ func main() {
 
 	server.Handle("/api/clients", func(r hfs.Request) *hfs.Response {
 		type cl struct {
-			Id        string `json:"id"` // Change to string
+			Id        string `json:"id"`
 			Name      string `json:"name"`
 			ConnectAt int64  `json:"connect_at"`
 		}
 
 		var result []cl
-		for _, v := range clients {
+		clients.Range(func(key, value interface{}) bool {
+			v := value.(*jsonserver.Client)
 			result = append(result, cl{
-				Id:        strconv.FormatInt(v.ConnectAt, 10), // Convert to string
+				Id:        strconv.FormatInt(v.ConnectAt, 10),
 				Name:      v.Name,
 				ConnectAt: v.ConnectAt,
 			})
-		}
+			return true
+		})
 
 		data, _ := json.Marshal(map[string]any{
 			"clients": result,
@@ -45,9 +48,10 @@ func main() {
 	server.Handle("/api/rooms", func(r hfs.Request) *hfs.Response {
 		var data []string
 
-		for k := range rooms {
-			data = append(data, k)
-		}
+		rooms.Range(func(key, value interface{}) bool {
+			data = append(data, key.(string))
+			return true
+		})
 
 		result, _ := json.Marshal(map[string]any{
 			"rooms": data,
@@ -64,7 +68,7 @@ func main() {
 
 		conn, _ := websocket.Upgrade(r)
 		client := jsonserver.NewClient(name, &conn)
-		clients[client.ConnectAt] = &client
+		clients.Store(client.ConnectAt, &client)
 
 		room := r.GetArgs("room")
 		private := r.GetArgs("private")
@@ -96,7 +100,7 @@ func main() {
 		}
 
 		// remove client from clients
-		delete(clients, client.ConnectAt)
+		clients.Delete(client.ConnectAt)
 
 		return hfs.NewTextResponse("OK")
 	})
@@ -109,13 +113,18 @@ func main() {
 
 func roomLoop(room string, client *jsonserver.Client) error {
 	// check if room is exist
-	if _, ok := rooms[room]; !ok {
+	if _, ok := rooms.Load(room); !ok {
 		websocket.CreateRoom(room)
-		rooms[room] = append(rooms[room], true)
+		rooms.Store(room, []bool{true})
 	}
 
 	// add to room
-	websocket.Rooms[room].AddClient(client.Conn)
+	rl, ok := websocket.Rooms.Load(room)
+	if !ok {
+		return errors.New("Error while loading room")
+	}
+
+	rl.(*hfs.Room).AddClient(client.Conn)
 
 	for {
 		data, err := client.Conn.Read()
@@ -175,11 +184,13 @@ func roomLoop(room string, client *jsonserver.Client) error {
 
 func privateLoop(private int64, client *jsonserver.Client) error {
 	// check if client is exist
-	if _, ok := clients[private]; !ok {
+	if _, ok := clients.Load(private); !ok {
 		return errors.New("Client not found")
 	}
 
-	to := clients[private]
+	toVal, _ := clients.Load(private)
+	to := toVal.(*jsonserver.Client)
+
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
