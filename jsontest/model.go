@@ -27,8 +27,8 @@ func (m *Message) Parse(msg []byte) error {
 	return json.Unmarshal(msg, m)
 }
 
-func (m Message) String() string {
+func (m Message) String() []byte {
 	result, _ := json.Marshal(m)
 
-	return string(result)
+	return result
 }

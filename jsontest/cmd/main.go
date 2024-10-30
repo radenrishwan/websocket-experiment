@@ -55,7 +55,7 @@ func main() {
 					}
 
 					// fmt.Println("Sending message ....")
-					err := conn.WriteMessage(websocket.TextMessage, msg.String()))
+					err := conn.WriteMessage(websocket.TextMessage, []byte(msg.String()))
 					if err != nil {
 						slog.Error("Error while writing message", "ERROR", err.Error())
 
@@ -65,7 +65,7 @@ func main() {
 					return nil
 				})
 
-				time.Sleep(1 * time.Minute)
+				time.Sleep(30 * time.Second)
 
 				stop <- true
 
@@ -125,19 +125,3 @@ func runMessageInterval(interval time.Duration, stop chan bool, run ...func() er
 
 	}
 }
-
-// msg := jsontest.Message{
-// 			Type:    jsontest.MESSAGE,
-// 			From:    name,
-// 			To:      room,
-// 			Content: lorem,
-// 		}
-
-// 		// fmt.Println("Sending message ....")
-// 		err := conn.WriteJSON(msg)
-// 		if err != nil {
-// 			slog.Error("Error while writing message", "ERROR", err.Error())
-// 			conn.Close()
-
-// 			break
-// 		}
