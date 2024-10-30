@@ -1,5 +1,5 @@
 import ws from "k6/ws";
-import { check, group, sleep } from "k6";
+import { check, group } from "k6";
 
 // Message types
 const MESSAGE = 0;
@@ -8,25 +8,18 @@ const LEAVE = 2;
 const TYPING = 3;
 const STOP_TYPING = 4;
 
-const vus = 5000;
+const msg = `
+  Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis non augue sit amet justo rhoncus sollicitudin non id urna. Proin non mollis ligula, sit amet dictum magna. Sed bibendum hendrerit imperdiet. In hac habitasse platea dictumst. Donec quam quam, elementum vel purus a, commodo venenatis nibh. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin convallis placerat dignissim. Maecenas magna arcu, commodo ac commodo ut, commodo auctor diam. Donec lobortis justo non pellentesque viverra. Proin non nunc vel ipsum dignissim tempus. Cras eget nisi maximus, congue ligula a, eleifend justo.
+`;
 
 export const options = {
-  vus: vus,
+  vus: 1000,
   duration: "2m",
-  exec: "setup",
 };
-
-const roomNameList: string[] = [];
-
-export function setup() {
-  for (let i = 0; i < vus / 10; i++) {
-    roomNameList.push(`room_${i}`);
-  }
-}
 
 export function runUserA() {
   const user = `userA_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -102,7 +95,7 @@ export function runUserA() {
 
 export function runUserB() {
   const user = `userB_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -178,7 +171,7 @@ export function runUserB() {
 
 export function runUserC() {
   const user = `userC_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -254,7 +247,7 @@ export function runUserC() {
 
 export function runUserD() {
   const user = `userD_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -330,7 +323,7 @@ export function runUserD() {
 
 export function runUserE() {
   const user = `userE_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -406,7 +399,7 @@ export function runUserE() {
 
 export function runUserF() {
   const user = `userF_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -482,7 +475,7 @@ export function runUserF() {
 
 export function runUserG() {
   const user = `userG_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -558,7 +551,7 @@ export function runUserG() {
 
 export function runUserH() {
   const user = `userH_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -634,7 +627,7 @@ export function runUserH() {
 
 export function runUserI() {
   const user = `userI_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(
@@ -708,9 +701,9 @@ export function runUserI() {
   });
 }
 
-export function runUserJ() {
+export default function runUserJ() {
   const user = `userJ_${__VU}_${__ITER}`;
-  const room = roomNameList[__VU % roomNameList.length];
+  const room = `room_${__VU % 10}`;
 
   group("User connect", () => {
     ws.connect(

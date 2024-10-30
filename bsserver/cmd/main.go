@@ -6,13 +6,14 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
+	"sync"
 
 	"github.com/radenrishwan/hfs"
 )
 
 var websocket = hfs.NewWebsocket(nil)
-var clients = make(map[int64]*bsserver.Client)
-var rooms = make(map[string][]bool)
+var clients sync.Map
+var rooms sync.Map
 
 func main() {
 	server := hfs.NewServer(":8083", hfs.Option{})
@@ -21,18 +22,21 @@ func main() {
 
 	server.Handle("/api/clients", func(r hfs.Request) *hfs.Response {
 		type cl struct {
-			Id   int64  `json:"id"`
-			Name string `json:"name"`
+			Id        string `json:"id"`
+			Name      string `json:"name"`
+			ConnectAt int64  `json:"connect_at"`
 		}
 
 		var result []cl
-
-		for _, v := range clients {
+		clients.Range(func(key, value interface{}) bool {
+			v := value.(*bsserver.Client)
 			result = append(result, cl{
-				Id:   v.ConnectAt,
-				Name: v.Name,
+				Id:        strconv.FormatInt(v.ConnectAt, 10),
+				Name:      v.Name,
+				ConnectAt: v.ConnectAt,
 			})
-		}
+			return true
+		})
 
 		data, _ := json.Marshal(map[string]any{
 			"clients": result,
@@ -43,9 +47,10 @@ func main() {
 	server.Handle("/api/rooms", func(r hfs.Request) *hfs.Response {
 		var data []string
 
-		for k := range rooms {
-			data = append(data, k)
-		}
+		rooms.Range(func(key, value interface{}) bool {
+			data = append(data, key.(string))
+			return true
+		})
 
 		result, _ := json.Marshal(map[string]any{
 			"rooms": data,
@@ -60,31 +65,52 @@ func main() {
 			return hfs.NewTextResponse("Name is required")
 		}
 
+		// check if name is exist
+		_, ok := clients.Load(name)
+		if ok {
+			slog.Error("Error while get args", "ERROR", "Name is already exist")
+			return hfs.NewTextResponse("Name is already exist")
+		}
+
 		conn, _ := websocket.Upgrade(r)
 		client := bsserver.NewClient(name, &conn)
-		clients[client.ConnectAt] = &client
+		clients.Store(client.Name, &client)
 
 		room := r.GetArgs("room")
 		private := r.GetArgs("private")
 
 		if room != "" {
-			roomLoop(room, &client)
-		} else if private != "" {
-			// string to int64
-			privId, err := strconv.Atoi(private)
+			err := roomLoop(room, &client)
 			if err != nil {
-				slog.Error("Error while converting private to int64", "ERROR", err.Error())
-				return hfs.NewTextResponse("Error while converting private to int64")
+				slog.Error("Error while room loop", "ERROR", err.Error())
+
+				// sending leave message
+				res := bsserver.Message{
+					Type:    bsserver.LEAVE,
+					From:    "SERVER",
+					To:      room,
+					Content: client.Name + " has left the room",
+				}
+
+				websocket.BroadcastWithMessageType(room, res.String(), hfs.BINARY, true)
+
+				// remove from room
+				r, _ := websocket.Rooms.Load(room)
+				r.(*hfs.Room).RemoveClient(client.Conn)
 			}
 
-			privateLoop(int64(privId), &client)
+		} else if private != "" {
+			err := privateLoop(private, &client)
+
+			if err != nil {
+				slog.Error("Error while room loop", "ERROR", err.Error())
+			}
 		} else {
 			slog.Error("Error while get args", "ERROR", "Room or private is required")
 			return hfs.NewTextResponse("Room or private is required")
 		}
 
-		// remove client from clients
-		delete(clients, client.ConnectAt)
+		clients.Delete(client.Name)
 
 		return hfs.NewTextResponse("OK")
 	})
@@ -97,17 +123,23 @@ func main() {
 
 func roomLoop(room string, client *bsserver.Client) error {
 	// check if room is exist
-	if _, ok := rooms[room]; !ok {
+	if _, ok := rooms.Load(room); !ok {
 		websocket.CreateRoom(room)
-		rooms[room] = append(rooms[room], true)
+		rooms.Store(room, []bool{true})
 	}
 
 	// add to room
-	websocket.Rooms[room].AddClient(client.Conn)
+	rl, ok := websocket.Rooms.Load(room)
+	if !ok {
+		return errors.New("Error while loading room")
+	}
+
+	rl.(*hfs.Room).AddClient(client.Conn)
 
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
+			client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
 			return err
 		}
 
@@ -116,8 +148,6 @@ func roomLoop(room string, client *bsserver.Client) error {
 		if err != nil {
 			slog.Error("Error while parsing data", "ERROR", err.Error())
 		}
-
-		slog.Info("MSG INCOMMING", "MSG", msg.String())
 
 		switch msg.Type {
 		case bsserver.MESSAGE:
@@ -161,16 +191,19 @@ func roomLoop(room string, client *bsserver.Client) error {
 	}
 }
 
-func privateLoop(private int64, client *bsserver.Client) error {
+func privateLoop(private string, client *bsserver.Client) error {
 	// check if client is exist
-	if _, ok := clients[private]; !ok {
+	if _, ok := clients.Load(private); !ok {
 		return errors.New("Client not found")
 	}
 
-	to := clients[private]
+	toVal, _ := clients.Load(private)
+	to := toVal.(*bsserver.Client)
+
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
+			client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
 			return err
 		}
 

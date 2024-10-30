@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"jsonserver"
+	"log"
 	"log/slog"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/radenrishwan/hfs"
 )
@@ -91,16 +93,36 @@ func main() {
 		client.Conn.Send(msg.String())
 
 		if room != "" {
-			roomLoop(room, &client)
+			err := roomLoop(room, &client)
+			if err != nil {
+				slog.Error("Error while room loop", "ERROR", err.Error())
+
+				// sending leave message
+				res := jsonserver.Message{
+					Type:    jsonserver.LEAVE,
+					From:    "SERVER",
+					To:      room,
+					Content: client.Name + " has left the room",
+				}
+
+				websocket.Broadcast(room, res.String(), true)
+
+				// remove from room
+				r, _ := websocket.Rooms.Load(room)
+				r.(*hfs.Room).RemoveClient(client.Conn)
+			}
 		} else if private != "" {
-			privateLoop(private, &client)
+			err := privateLoop(private, &client)
+
+			if err != nil {
+				slog.Error("Error while private loop", "ERROR", err.Error())
+			}
 		} else {
 			slog.Error("Error while get args", "ERROR", "Room or private is required")
 			return hfs.NewTextResponse("Room or private is required")
 		}
 
-		// remove client from clients
-		clients.Delete(client.ConnectAt)
+		clients.Delete(client.Name)
 
 		return hfs.NewTextResponse("OK")
 	})
@@ -129,14 +151,20 @@ func roomLoop(room string, client *jsonserver.Client) error {
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
-			return err
+			if !(err.Error() == "EOF") {
+				client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
+				return err
+			}
 		}
 
 		msg := jsonserver.NewMessage()
 		err = msg.Parse(data)
 		if err != nil {
+			client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
 			slog.Error("Error while parsing data", "ERROR", err.Error())
 		}
+
+		log.Println("MSG: ", msg)
 
 		switch msg.Type {
 		case jsonserver.MESSAGE:
@@ -182,17 +210,28 @@ func roomLoop(room string, client *jsonserver.Client) error {
 
 func privateLoop(private string, client *jsonserver.Client) error {
 	// check if client is exist
-	if _, ok := clients.Load(private); !ok {
-		return errors.New("Client not found")
+	maxRetries := 5
+	var to *jsonserver.Client
+
+	for i := 0; i < maxRetries; i++ {
+		if toVal, ok := clients.Load(private); ok {
+			to = toVal.(*jsonserver.Client)
+			break
+		}
+		time.Sleep(time.Second) // Wait before retry
 	}
 
-	toVal, _ := clients.Load(private)
-	to := toVal.(*jsonserver.Client)
+	if to == nil {
+		return errors.New("Client not found after retries")
+	}
 
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
-			return err
+			if !(err.Error() == "EOF") {
+				client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
+				return err
+			}
 		}
 
 		msg := jsonserver.NewMessage()
@@ -200,6 +239,8 @@ func privateLoop(private string, client *jsonserver.Client) error {
 		if err != nil {
 			slog.Error("Error while parsing data", "ERROR", err.Error())
 		}
+
+		log.Println("MSG: ", msg)
 
 		switch msg.Type {
 		case jsonserver.MESSAGE:
