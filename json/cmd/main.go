@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"jsonserver"
 	"log"
 	"log/slog"
@@ -41,6 +42,7 @@ func main() {
 		})
 
 		data, _ := json.Marshal(map[string]any{
+			"count":   len(result),
 			"clients": result,
 		})
 
@@ -56,6 +58,7 @@ func main() {
 		})
 
 		result, _ := json.Marshal(map[string]any{
+			"count": len(data),
 			"rooms": data,
 		})
 		return hfs.NewJSONResponse(string(result))
@@ -122,7 +125,16 @@ func main() {
 			return hfs.NewTextResponse("Room or private is required")
 		}
 
+		slog.Info("Delete client", "Name", client.Name)
 		clients.Delete(client.Name)
+
+		// check if room is empty
+		currentRoom, _ := websocket.Rooms.Load(room)
+
+		if room != "" && len(currentRoom.(*hfs.Room).Client) == 0 {
+			websocket.Rooms.Delete(room)
+			rooms.Delete(room)
+		}
 
 		return hfs.NewTextResponse("OK")
 	})
@@ -151,7 +163,8 @@ func roomLoop(room string, client *jsonserver.Client) error {
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
-			if !(err.Error() == "EOF") {
+			fmt.Println("ERR: ", err.Error())
+			if !(err.Error() == "Error reading message : EOF") {
 				client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
 				return err
 			}
@@ -164,7 +177,7 @@ func roomLoop(room string, client *jsonserver.Client) error {
 			slog.Error("Error while parsing data", "ERROR", err.Error())
 		}
 
-		log.Println("MSG: ", msg)
+		// log.Println("MSG: ", msg)
 
 		switch msg.Type {
 		case jsonserver.MESSAGE:
@@ -228,7 +241,7 @@ func privateLoop(private string, client *jsonserver.Client) error {
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
-			if !(err.Error() == "EOF") {
+			if !(err.Error() == "Error reading message : EOF") {
 				client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
 				return err
 			}
