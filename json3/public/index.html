@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+  <head>
+    <title>WebSocket Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-4">
+      <!-- Connection Panel -->
+      <div id="connectionPanel" class="bg-white rounded-lg shadow p-6 mb-4">
+        <h2 class="text-2xl font-bold mb-4">Connect to Chat</h2>
+        <div class="flex gap-4">
+          <input
+            type="text"
+            id="name"
+            placeholder="Your name"
+            class="flex-1 p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          <input
+            type="text"
+            id="room"
+            placeholder="Room name"
+            class="flex-1 p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+          <button
+            onclick="connect()"
+            class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 transition"
+          >
+            Connect
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Chat Interface -->
+      <div id="chatInterface" class="hidden">
+        <div class="grid grid-cols-4 gap-4">
+          <!-- Sidebar -->
+          <div class="col-span-1">
+            <!-- Rooms List -->
+            <div class="bg-white rounded-lg shadow p-4 mb-4">
+              <h3 class="font-bold text-lg mb-2">Available Rooms</h3>
+              <div id="roomsList" class="space-y-2">
+                <!-- Rooms will be listed here -->
+              </div>
+            </div>
+
+            <!-- Users List -->
+            <div class="bg-white rounded-lg shadow p-4">
+              <h3 class="font-bold text-lg mb-2">Users in Room</h3>
+              <div id="usersList" class="space-y-2">
+                <!-- Users will be listed here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Area -->
+          <div class="col-span-3">
+            <div class="bg-white rounded-lg shadow h-[600px] flex flex-col">
+              <!-- Messages Area -->
+              <div id="messages" class="flex-1 p-4 overflow-y-auto space-y-2">
+                <!-- Messages will appear here -->
+              </div>
+
+              <!-- Input Area -->
+              <div class="border-t p-4">
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    id="message"
+                    placeholder="Type your message..."
+                    class="flex-1 p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                    onkeypress="if(event.key === 'Enter') sendMessage()"
+                  />
+                  <button
+                    onclick="sendMessage()"
+                    class="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 transition"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let ws;
+      let currentRoom = "";
+      let currentUser = "";
+      let connectedUsers = new Set();
+
+      // Fetch rooms list from API
+      async function fetchRooms() {
+        try {
+          const response = await fetch("/api/rooms");
+          const data = await response.json();
+          updateRoomsList(data.rooms);
+        } catch (error) {
+          console.error("Error fetching rooms:", error);
+        }
+      }
+
+      // Update rooms list in UI
+      function updateRoomsList(rooms) {
+        const roomsList = document.getElementById("roomsList");
+        roomsList.innerHTML = rooms
+          .map(
+            (room) => `
+                <div class="p-2 ${room === currentRoom ? "bg-blue-100" : "hover:bg-gray-100"} rounded cursor-pointer">
+                    ${room}
+                </div>
+            `,
+          )
+          .join("");
+      }
+
+      // Update users list in UI
+      function updateUsersList() {
+        const usersList = document.getElementById("usersList");
+        usersList.innerHTML = Array.from(connectedUsers)
+          .map(
+            (user) => `
+                <div class="p-2 rounded ${user === currentUser ? "bg-green-100" : ""}">
+                    ${user}
+                </div>
+            `,
+          )
+          .join("");
+      }
+
+      // Add message to chat
+      function addMessage(msg) {
+        const messages = document.getElementById("messages");
+        const isCurrentUser = msg.from === currentUser;
+
+        const messageDiv = document.createElement("div");
+        messageDiv.className = `flex ${isCurrentUser ? "justify-end" : "justify-start"} mb-4`;
+
+        messageDiv.innerHTML = `
+                <div class="max-w-[70%] ${isCurrentUser ? "bg-blue-500 text-white" : "bg-gray-200"} rounded-lg px-4 py-2">
+                    <div class="font-bold text-sm">${msg.from}</div>
+                    <div>${msg.content}</div>
+                </div>
+            `;
+
+        messages.appendChild(messageDiv);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      // Add system message
+      function addSystemMessage(content) {
+        const messages = document.getElementById("messages");
+        const messageDiv = document.createElement("div");
+        messageDiv.className = "flex justify-center mb-4";
+        messageDiv.innerHTML = `
+                <div class="bg-gray-100 text-gray-600 text-sm rounded-lg px-4 py-2">
+                    ${content}
+                </div>
+            `;
+        messages.appendChild(messageDiv);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      // Connect to WebSocket
+      function connect() {
+        const name = document.getElementById("name").value.trim();
+        const room = document.getElementById("room").value.trim();
+
+        if (!name || !room) {
+          alert("Name and room are required");
+          return;
+        }
+
+        currentRoom = room;
+        currentUser = name;
+        connectedUsers.add(name);
+
+        ws = new WebSocket(`ws://localhost:8083/ws?name=${name}&room=${room}`);
+
+        ws.onopen = function () {
+          document.getElementById("connectionPanel").classList.add("hidden");
+          document.getElementById("chatInterface").classList.remove("hidden");
+          addSystemMessage(`Connected to room: ${room}`);
+          fetchRooms();
+          updateUsersList();
+        };
+
+        ws.onmessage = function (evt) {
+          const msg = JSON.parse(evt.data);
+          handleMessage(msg);
+        };
+
+        ws.onclose = function () {
+          addSystemMessage("Disconnected from server");
+          document.getElementById("connectionPanel").classList.remove("hidden");
+          document.getElementById("chatInterface").classList.add("hidden");
+          connectedUsers.clear();
+          updateUsersList();
+        };
+
+        // Fetch rooms every 5 seconds
+        setInterval(fetchRooms, 5000);
+      }
+
+      // Handle incoming messages
+      function handleMessage(msg) {
+        switch (msg.type) {
+          case 0: // Regular message
+            addMessage(msg);
+            break;
+
+          case 1: // Join room
+            connectedUsers.add(msg.from);
+            addSystemMessage(`${msg.from} joined the room`);
+            updateUsersList();
+            break;
+
+          case 2: // Leave room
+            connectedUsers.delete(msg.from);
+            addSystemMessage(`${msg.from} left the room`);
+            updateUsersList();
+            break;
+
+          case 7: // User list update
+            connectedUsers = new Set(msg.content.split(","));
+            updateUsersList();
+            break;
+        }
+      }
+
+      // Send message
+      function sendMessage() {
+        const messageInput = document.getElementById("message");
+        const content = messageInput.value.trim();
+        if (!content || !ws) return;
+
+        const msg = {
+          type: 0,
+          from: currentUser,
+          content: content,
+        };
+
+        ws.send(JSON.stringify(msg));
+        messageInput.value = "";
+      }
+
+      // Initial rooms fetch
+      fetchRooms();
+
+      // Handle page unload
+      window.onbeforeunload = function () {
+        if (ws) {
+          ws.close();
+        }
+      };
+    </script>
+  </body>
+</html>

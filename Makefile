@@ -4,5 +4,5 @@ json-private-test:
 	date "+%Y-%m-%d %H:%M:%S" >> NOTE.md && echo "Private test done"
 json-room-test:
 	date "+%Y-%m-%d %H:%M:%S" >> NOTE.md && echo "Running room test" && \
-	k6 run test/src/json.room.test.ts
+	k6 run test/src/json.room.test.js
 	date "+%Y-%m-%d %H:%M:%S" >> NOTE.md && echo "Room test done"

@@ -1,5 +1,6 @@
 import { WebSocket } from "k6/x/websockets";
-import { check, group, sleep } from "k6";
+import { check } from "k6";
+import { SharedArray } from "k6/data";
 
 // Message types
 const MESSAGE = 0;
@@ -8,21 +9,53 @@ const LEAVE = 2;
 const TYPING = 3;
 const STOP_TYPING = 4;
 
+const msg = `
+  "Lorem ipsum" is a placeholder text commonly used in design, publishing, and graphic design. It's derived from Latin but is essentially meaningless text used to demonstrate visual elements of a document or visual presentation without the distraction of meaningful content.
+  `;
+
+var vus = 5;
+
 export const options = {
-  vus: 100,
-  duration: "2m",
+  discardResponseBodies: true,
+  scenarios: {
+    userA: {
+      executor: "shared-iterations",
+      exec: "userA",
+      vus: vus,
+      iterations: vus,
+    },
+    userB: {
+      executor: "shared-iterations",
+      exec: "userB",
+      vus: vus,
+      iterations: vus,
+      startTime: "2s",
+    },
+  },
 };
 
-export default function userA() {
+// username for userA and userB
+const data = new SharedArray("username", () => {
+  const data = [];
+
+  for (let i = 1; i <= vus; i++) {
+    data.push(`userA${i}`);
+    data.push(`userB${i}`);
+  }
+
+  return data;
+});
+export function userA() {
   // create username from VU number
   const username = `userA${__VU}`;
+
+  console.log(`UserA: ${username}`);
 
   var url = "ws://localhost:8083/ws";
 
   let ws = new WebSocket(url + `?name=${username}&room=private`);
 
   ws.onopen = () => {
-    console.log(`${username} Connected to ${url}`);
     // send join message
     ws.send(
       JSON.stringify({
@@ -35,10 +68,23 @@ export default function userA() {
 
   ws.onmessage = (msg) => {
     const message = JSON.parse(msg.data);
-    console.log(`Received message: ${msg.data}`);
-    check(message, {
-      "message type is MESSAGE": (m) => m.type !== undefined,
-    });
+    switch (message.type) {
+      case MESSAGE:
+        check(message, {
+          "message type is MESSAGE": (m) => m.type === MESSAGE,
+        });
+        break;
+      case TYPING:
+        check(message, {
+          "message type is TYPING": (m) => m.type === TYPING,
+        });
+        break;
+      case STOP_TYPING:
+        check(message, {
+          "message type is STOP_TYPING": (m) => m.type === STOP_TYPING,
+        });
+        break;
+    }
   };
 
   setInterval(() => {
@@ -84,7 +130,9 @@ export default function userA() {
 
 export function userB() {
   const username = `userB${__VU}`;
-  const usernameA = `userA${__VU}`;
+  const usernameA = `userA${__VU - 1}`;
+
+  console.log(`UserB: ${username} UserA: ${usernameA}`);
 
   var url = "ws://localhost:8083/ws";
 
@@ -105,24 +153,34 @@ export function userB() {
   ws.onmessage = (msg) => {
     const message = JSON.parse(msg.data);
     console.log(`Received message: ${msg.data}`);
-    check(message, {
-      "message type is MESSAGE": (m) => m.type !== undefined,
-    });
+    switch (message.type) {
+      case MESSAGE:
+        check(message, {
+          "message type is MESSAGE": (m) => m.type === MESSAGE,
+        });
+        break;
+      case TYPING:
+        check(message, {
+          "message type is TYPING": (m) => m.type === TYPING,
+        });
+        break;
+      case STOP_TYPING:
+        check(message, {
+          "message type is STOP_TYPING": (m) => m.type === STOP_TYPING,
+        });
+        break;
+    }
   };
 
   setInterval(() => {
-    const msg = "Hello, World!!!";
-
     // send typing message
-    for (let i = 0; i < msg.length; i++) {
-      ws.send(
-        JSON.stringify({
-          type: TYPING,
-          from: username,
-          to: usernameA,
-        }),
-      );
-    }
+    ws.send(
+      JSON.stringify({
+        type: TYPING,
+        from: username,
+        to: usernameA,
+      }),
+    );
 
     // send message
     ws.send(

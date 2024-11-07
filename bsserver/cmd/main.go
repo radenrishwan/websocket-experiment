@@ -4,9 +4,11 @@ import (
 	"bsserver"
 	"encoding/json"
 	"errors"
+	"log"
 	"log/slog"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/radenrishwan/hfs"
 )
@@ -39,6 +41,7 @@ func main() {
 		})
 
 		data, _ := json.Marshal(map[string]any{
+			"count":   len(result),
 			"clients": result,
 		})
 
@@ -53,6 +56,7 @@ func main() {
 		})
 
 		result, _ := json.Marshal(map[string]any{
+			"count": len(data),
 			"rooms": data,
 		})
 		return hfs.NewJSONResponse(string(result))
@@ -78,6 +82,16 @@ func main() {
 
 		room := r.GetArgs("room")
 		private := r.GetArgs("private")
+
+		// send user data
+		msg := bsserver.Message{
+			Type:    bsserver.MESSAGE,
+			From:    "SERVER",
+			To:      string(rune(client.ConnectAt)),
+			Content: string(client.Json()),
+		}
+
+		client.Conn.SendWithMessageType(msg.String(), hfs.BINARY)
 
 		if room != "" {
 			err := roomLoop(room, &client)
@@ -110,7 +124,16 @@ func main() {
 			return hfs.NewTextResponse("Room or private is required")
 		}
 
+		slog.Info("Delete client", "Name", client.Name)
 		clients.Delete(client.Name)
+
+		// check if room is empty
+		currentRoom, _ := websocket.Rooms.Load(room)
+
+		if room != "" && len(currentRoom.(*hfs.Room).Client) == 0 {
+			websocket.Rooms.Delete(room)
+			rooms.Delete(room)
+		}
 
 		return hfs.NewTextResponse("OK")
 	})
@@ -193,18 +216,28 @@ func roomLoop(room string, client *bsserver.Client) error {
 
 func privateLoop(private string, client *bsserver.Client) error {
 	// check if client is exist
-	if _, ok := clients.Load(private); !ok {
-		return errors.New("Client not found")
+	maxRetries := 5
+	var to *bsserver.Client
+
+	for i := 0; i < maxRetries; i++ {
+		if toVal, ok := clients.Load(private); ok {
+			to = toVal.(*bsserver.Client)
+			break
+		}
+		time.Sleep(time.Second) // Wait before retry
 	}
 
-	toVal, _ := clients.Load(private)
-	to := toVal.(*bsserver.Client)
+	if to == nil {
+		return errors.New("Client not found after retries")
+	}
 
 	for {
 		data, err := client.Conn.Read()
 		if err != nil {
-			client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
-			return err
+			if !(err.Error() == "Error reading message : EOF") {
+				client.Conn.Close(err.Error(), hfs.STATUS_CLOSE_NO_STATUS)
+				return err
+			}
 		}
 
 		msg := bsserver.NewMessage()
@@ -212,6 +245,8 @@ func privateLoop(private string, client *bsserver.Client) error {
 		if err != nil {
 			slog.Error("Error while parsing data", "ERROR", err.Error())
 		}
+
+		log.Println("MSG: ", msg)
 
 		switch msg.Type {
 		case bsserver.MESSAGE:

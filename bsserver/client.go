@@ -1,15 +1,16 @@
 package bsserver
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/radenrishwan/hfs"
 )
 
 type Client struct {
-	Name      string
-	Conn      *hfs.Client
-	ConnectAt int64
+	Name      string      `json:"name"`
+	Conn      *hfs.Client `json:"-"`
+	ConnectAt int64       `json:"connect_at"`
 }
 
 func NewClient(name string, conn *hfs.Client) Client {
@@ -18,4 +19,10 @@ func NewClient(name string, conn *hfs.Client) Client {
 		Conn:      conn,
 		ConnectAt: time.Now().UnixMilli(),
 	}
+}
+
+func (c Client) Json() []byte {
+	res, _ := json.Marshal(c)
+
+	return res
 }

@@ -23,8 +23,6 @@ func main() {
 
 	server.ServeFile("/", "public/index.html")
 
-	server.ServeDir("/public", "public")
-
 	server.Handle("/api/clients", func(r hfs.Request) *hfs.Response {
 		type cl struct {
 			Id        string `json:"id"`

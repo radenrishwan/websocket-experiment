@@ -5,11 +5,11 @@ import "encoding/json"
 type MessageType int
 
 const (
-	MESSAGE     MessageType = iota
-	JOIN        MessageType = iota
-	LEAVE       MessageType = iota
-	TYPING      MessageType = iota
-	STOP_TYPING MessageType = iota
+	MESSAGE MessageType = iota
+	JOIN
+	LEAVE
+	TYPING
+	STOP_TYPING
 )
 
 type Message struct {
