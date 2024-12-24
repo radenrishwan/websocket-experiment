@@ -20,6 +20,8 @@ class _GroupScreenState extends State<GroupScreen> {
   late final WebSocketChannel channel;
 
   final TextEditingController _messageController = TextEditingController();
+  final controllerNode = FocusNode();
+
   final List<MessageResponse> _messages = [];
   final ScrollController _scrollController = ScrollController();
 
@@ -113,6 +115,7 @@ class _GroupScreenState extends State<GroupScreen> {
                 if (snapshot.hasData) {
                   final message =
                       MessageResponse.fromJson(jsonDecode(snapshot.data!));
+                  log(message.toString());
 
                   if (message.type == MessageType.TYPING) {
                     onTyping = true;
@@ -120,8 +123,6 @@ class _GroupScreenState extends State<GroupScreen> {
                   } else if (message.type == MessageType.STOP_TYPING) {
                     onTyping = false;
                   } else {
-                    log(message.toString());
-
                     _messages.add(
                         MessageResponse.fromJson(jsonDecode(snapshot.data!)));
                     _scrollToBottom();
@@ -176,6 +177,7 @@ class _GroupScreenState extends State<GroupScreen> {
                   Expanded(
                     child: TextField(
                       controller: _messageController,
+                      focusNode: controllerNode,
                       onChanged: (value) {
                         if (value.trim().isNotEmpty) {
                           _sendTypingStatus();
@@ -186,6 +188,8 @@ class _GroupScreenState extends State<GroupScreen> {
                       onSubmitted: (value) {
                         _sendStopTypingStatus();
                         _sendMessage();
+
+                        controllerNode.requestFocus();
                       },
                       decoration: InputDecoration(
                         hintText: 'Type a message',
@@ -204,7 +208,12 @@ class _GroupScreenState extends State<GroupScreen> {
                   ),
                   const SizedBox(width: 8),
                   IconButton(
-                    onPressed: _sendMessage,
+                    onPressed: () {
+                      _sendStopTypingStatus();
+                      _sendMessage();
+
+                      controllerNode.requestFocus();
+                    },
                     icon: const Icon(Icons.send),
                     color: Theme.of(context).primaryColor,
                   ),
