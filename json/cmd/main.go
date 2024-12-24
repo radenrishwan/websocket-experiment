@@ -16,12 +16,20 @@ import (
 
 var websocket = hfs.NewWebsocket(nil)
 var clients sync.Map
-var rooms sync.Map
+var rooms = sync.Map{}
+
+type Room struct {
+	Name        string `json:"name"`
+	Count       int    `json:"count"`
+	LastMessage string `json:"last_message"`
+}
 
 func main() {
 	server := hfs.NewServer(":8083", hfs.Option{})
 
 	server.ServeFile("/", "public/index.html")
+
+	server.ServeDir("/public", "public/")
 
 	server.Handle("/api/clients", func(r hfs.Request) *hfs.Response {
 		type cl struct {
@@ -50,16 +58,21 @@ func main() {
 	})
 
 	server.Handle("/api/rooms", func(r hfs.Request) *hfs.Response {
-		var data []string
+		var roomsList []Room
 
 		rooms.Range(func(key, value interface{}) bool {
-			data = append(data, key.(string))
+			room := value.(*Room)
+			// Get the actual count of clients in the room from websocket
+			if wsRoom, ok := websocket.Rooms.Load(room.Name); ok {
+				room.Count = len(wsRoom.(*hfs.Room).Client)
+			}
+			roomsList = append(roomsList, *room)
 			return true
 		})
 
 		result, _ := json.Marshal(map[string]any{
-			"count": len(data),
-			"rooms": data,
+			"count": len(roomsList),
+			"rooms": roomsList,
 		})
 		return hfs.NewJSONResponse(string(result))
 	})
@@ -86,14 +99,14 @@ func main() {
 		private := r.GetArgs("private")
 
 		// send user data
-		msg := jsonserver.Message{
-			Type:    jsonserver.MESSAGE,
-			From:    "SERVER",
-			To:      string(rune(client.ConnectAt)),
-			Content: string(client.Json()),
-		}
+		// msg := jsonserver.Message{
+		// 	Type:    jsonserver.MESSAGE,
+		// 	From:    "SERVER",
+		// 	To:      string(rune(client.ConnectAt)),
+		// 	Content: string(client.Json()),
+		// }
 
-		client.Conn.Send(msg.String())
+		// client.Conn.Send(msg.String())
 
 		if room != "" {
 			err := roomLoop(room, &client)
@@ -149,7 +162,11 @@ func roomLoop(room string, client *jsonserver.Client) error {
 	// check if room is exist
 	if _, ok := rooms.Load(room); !ok {
 		websocket.CreateRoom(room)
-		rooms.Store(room, []bool{true})
+		rooms.Store(room, &Room{
+			Name:        room,
+			Count:       1,
+			LastMessage: "",
+		})
 	}
 
 	// add to room
@@ -181,6 +198,10 @@ func roomLoop(room string, client *jsonserver.Client) error {
 
 		switch msg.Type {
 		case jsonserver.MESSAGE:
+			if roomData, ok := rooms.Load(room); ok {
+				roomData.(*Room).LastMessage = msg.Content
+			}
+
 			websocket.Broadcast(room, msg.String(), true)
 		case jsonserver.JOIN:
 			res := jsonserver.Message{
